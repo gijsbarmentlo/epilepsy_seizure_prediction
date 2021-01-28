@@ -68,22 +68,32 @@ import scipy.stats
 import scipy.signal
 from os import listdir
 from os.path import isfile, join
+from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 import logging
-logging.basicConfig(format='%(asctime)s.%(msecs)03d %(levelname)s {%(module)s} [%(funcName)s] %(message)s', datefmt='%Y-%m-%d,%H:%M:%S', level=logging.INFO)
 
 #%%  
 
 DATA_PATH = 'C:/Users/gijsb/OneDrive/Documents/epilepsy_neurovista_data/'
 TRAIN_PATHS = [f'Pat{i}Train' for i in [1, 2, 3]]
 TEST_PATHS = [f'Pat{i}Test' for i in [1, 2, 3]]
+FEATURE_SAVE_PATH = DATA_PATH # Path where output feature arrays will be saved
 
 SAMPLING_FREQUENCY = 400
 DOWNSAMPLING_RATIO = 5
 CHANNELS = range(0,16)
 BANDS = [0.1,1,4,8,12,30,70]
 HIGHRES_BANDS = [0.1,1,4,8,12,30,70,180]
+
+
+today_string = str(datetime.now())[0:19].replace('-', '_').replace(':', '_').replace(' ', '_')
+log_filename = f'feature_generation_log_{today_string}.log'
+logging.basicConfig(level=logging.DEBUG, 
+                    filename=log_filename, 
+                    format='%(asctime)s.%(msecs)03d %(levelname)s {%(module)s} [%(funcName)s] %(message)s', 
+                    datefmt='%Y-%m-%d,%H:%M:%S')
+
 
 #%%
 
@@ -174,24 +184,26 @@ def svd_entropy(x, order=3, delay=1, normalize=False):
 
 # Loop over files in filelist to generate features
 #TODO make a clean iteratin over each patients file
-for p in [2, 3]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
-
-    logging.info(f'entered patient {p} feature generation loop')
-
-    patient_path = join(DATA_PATH, f'Pat{p}Train')
-    filelist = [join(patient_path, f) for f in listdir(patient_path) if isfile(join(patient_path, f))]
     
-    logging.debug(f'generated filelist of length {len(filelist)}')
+    
+    
+def generate_features(patient_number, data_path, is_training_data, save_to_disk = True):
+    
+    filenames = [f for f in listdir(data_path) if isfile(join(data_path, f))]
+    filelist = [join(data_path, f) for f in listdir(data_path) if isfile(join(data_path, f))]
+
+
+    logging.debug(f'generated filelist of length {len(filelist)} for patient {patient_number}; is_training_data = {is_training_data}')
     
     counter = 0
-    for mat_file_path in tqdm(filelist):
+    for filename in tqdm(filenames):
         
         # Lists that will contain feature names and values, we will stack these to make X_train
         index = []
         features = []
 
         #Load file & normalise
-        data = load_mat(mat_file_path)
+        data = load_mat(join(data_path, filename))
         data = preprocessing.scale(data, axis=1, with_std=True)
         data_downsampled = scipy.signal.decimate(data, 5, zero_phase=True)
         
@@ -199,9 +211,10 @@ for p in [2, 3]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
         
         # ID features
         index.append('Patient')
-        features.append(p)
+        features.append(patient_number)
         
-        label = mat_file_path[-5 : -4] #last char excluding .mat
+        index.append('filenumber')
+        features.append(filename[filename.find('_')+1:-6])
         
         #accross channels features on full data
         correlation_matrix = np.corrcoef(data)
@@ -334,11 +347,14 @@ for p in [2, 3]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
 
             # Highres features : energy per frequency band in 1min segements
             highres_channel_energy = highres_total_energy(data)
+            # TODO add highres_channel_energy as feature
+            
             f, psd = scipy.signal.welch(
                 data, fs=400, nperseg=SAMPLING_FREQUENCY*4)
             psd = np.nan_to_num(psd)
-            full_psd_sum = psd.sum()/10  # for normalisation purposed
-
+            #full_psd_sum = psd.sum()/10  # for normalisation purposed
+            # TODO add band energy divided by full_psd_sum as feature
+            
             # j allows us to iterate over 1min segments with 30s overlap
             for j in range(19):
                 data_segment = data_channel[j*30*SAMPLING_FREQUENCY: (j+1)*30*SAMPLING_FREQUENCY]
@@ -354,32 +370,62 @@ for p in [2, 3]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
                     
             logging.debug('highres frequency features generated')
             
-            logging.debug(f'finished feature generation file:{counter}, channel:{c}')
+            #logging.debug(f'finished feature generation file:{counter}, channel:{c}')
 
         # Save generated features to X_train
         if counter == 0:
             #X_train = np.zeros((1, len(features)))
-            X_train = np.array(features)
-            y_train = np.array(label).astype('int')
-            logging.debug('empty X_train created and updated')
-            
+            X = np.array(features)
+            logging.debug('X created and updated')   
         else:
-            X_train = np.vstack((X_train, np.array(features)))
-            y_train = np.vstack((y_train, np.array(label))).astype('int')
-            logging.debug(f'features for file:{counter} added to array ; X_train.shape = {X_train.shape} ; y_train.shape = {y_train.shape}')
-
+            X = np.vstack((X, np.array(features)))
+            logging.debug(f'features for file:{counter} added to array ; X.shape = {X.shape}')
+        
+        # Save label to y_train
+        if is_training_data:
+            label = filename[-5 : -4] #last char excluding .mat
+            if counter == 0:
+                y = np.array(label).astype('int')
+                logging.debug(' y created and updated')
+            else :
+                y = np.vstack((y, np.array(label))).astype('int')
+                logging.debug(f'label stacked onto y, y.shape = {y.shape}')
+        
         counter += 1
 
         #TODO add logging
 
     # Save X_train to file before moving on to next patient data
-    X_train = np.nan_to_num(X_train)
-    y_train = np.nan_to_num(y_train)
+    X = np.nan_to_num(X)
+    y = np.nan_to_num(y)
+       
+    if is_training_data:
+        if save_to_disk:
+            np.save(join(FEATURE_SAVE_PATH, f'neurovista_X_train_pat{patient_number}.npy'), X)
+            np.save(join(FEATURE_SAVE_PATH, f'neurovista_y_train_pat{patient_number}.npy'), y)
+            logging.debug('features and labels saved to disk')
+        return (X, y)
     
-    np.save(f'neurovista_X_train_pat{p}.npy', X_train)
-    np.save(f'neurovista_y_train_pat{p}.npy', y_train)
-    logging.debug('features and labels saved to disk')
+    if is_training_data == False:
+        if save_to_disk:
+            np.save(join(FEATURE_SAVE_PATH, f'neurovista_X_test_pat{patient_number}.npy'), X)
+            logging.debug('features saved to disk')
+        return X
+    
+    
+#%% Calling feature generation over our data
 
+data_dict = {}
 
+for p in [2, 3]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
+
+    logging.info(f'Entering loop to generate train features for patient {p}')
+    patient_path = join(DATA_PATH, TRAIN_PATHS[p-1])
+    
+    data_dict[f'X_train_pat{p}'], data_dict[f'y_train_pat{p}'] = generate_features(patient_number = p , data_path = patient_path, is_training_data = True, save_to_disk = True)
+    
+    
 #%%
-     
+
+print(data_dict['X_train_pat3'])     
+print(data_dict['y_train_pat3'])
