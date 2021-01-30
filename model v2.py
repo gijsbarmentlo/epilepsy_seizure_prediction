@@ -12,12 +12,13 @@ import sklearn.metrics
 
 #%% Helper functions
 
+
 def compute_metrics(clf, X_test, y_test):
     """
     return a dict containing auc, f1score, accuracy, balanced_accuracy, recall
     """
     y_pred = clf.predict(X_test)
-    y_pred_proba = clf.predict_proba(X_test)
+    y_pred_proba = clf.predict_proba(X_test)[:1]
     
     auc = roc_auc_score(y_test, y_pred_proba)
     f1score = f1_score(y_test, y_pred)
@@ -34,6 +35,19 @@ def compute_metrics(clf, X_test, y_test):
     
     return metrics_dict
 
+
+#%% Load data from file into dict
+
+X_pat = {}
+y_pat = {}
+
+for p in [1,2,3]:
+    X_pat[f'pat{p}'] = np.load(f'neurovista_X_train_pat{p}.npy').astype('float32')
+    X_pat[f'pat{p}'] = np.nan_to_num(X_pat[f'pat{p}'])
+    
+    y_pat[f'pat{p}'] = np.load(f'neurovista_y_train_pat{p}.npy').astype('float32')
+    y_pat[f'pat{p}'] = np.nan_to_num(y_pat[f'pat{p}'])
+    
 
 #%% patient specific models
 
@@ -63,16 +77,7 @@ for p in [2]:
 
 #%% Model for all patients with cross patient test/train split
 
-X_pat = {}
-y_pat = {}
 
-# Load data from file
-for p in [1,2,3]:
-    X_pat[f'pat{p}'] = np.load(f'neurovista_X_train_pat{p}.npy').astype('float32')
-    X_pat[f'pat{p}'] = np.nan_to_num(X_pat[f'pat{p}'])
-    
-    y_pat[f'pat{p}'] = np.load(f'neurovista_y_train_pat{p}.npy').astype('float32')
-    y_pat[f'pat{p}'] = np.nan_to_num(y_pat[f'pat{p}'])
 
 # Assign data to train and test sets
 #X = np.vstack((X_pat['pat3'], X_pat['pat2'], X_pat['pat1']))
@@ -92,7 +97,6 @@ metrics_dict = compute_metrics(clf, X_test, y_test)
 #auc_2 = auc(fpr, tpr)
 
 print (metrics_dict)
-
 
 
 #print(f'model for both patients 2 and 3 performance metrics : \n AUC : {auc} \n f1_score = {f1score} \n accuracy : {accuracy} \n  ')
@@ -151,3 +155,27 @@ print(X_df.describe())
 
 y_df = pd.DataFrame(y)
 print(y_df.describe())
+
+#%% hyperparameter tuning
+
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.metrics import make_scorer
+
+def my_score_function(y_true, y_pred):
+    
+    return score
+
+scorer_object = make_scorer(roc_auc_score, greater_is_better = True, needs_proba = True)
+
+extra_trees_clf = ExtraTreesClassifier(n_estimators=100, criterion='gini', n_jobs=4)
+
+distributions = dict(n_estimators=range(10, 1000), 
+                     max_depth=range(5, 40),  
+                     min_samples_leaf=[1,2,5], 
+                     min_impurity_decrease=[0, 0.1], 
+                     bootstrap=[False, True])
+
+clf = RandomizedSearchCV(extra_trees_clf, distributions, n_iter = 10, n_jobs = -1, verbose = 2, return_train_score = True, scoring = scorer_object, random_state=0)
+
+search = clf.fit(X_train, y_train)
+cv_clf = search.best_estimator_
