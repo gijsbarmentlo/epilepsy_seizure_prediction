@@ -1,0 +1,71 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Jan 29 18:14:44 2021
+
+@author: gijsb
+"""
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.metrics import roc_auc_score
+
+
+#%% patient specific models
+
+for p in [2,3]:
+    X = np.load(f'neurovista_X_train_pat{p}.npy').astype('float32')
+    X = np.nan_to_num(X)
+    
+    y = np.load(f'neurovista_y_train_pat{p}.npy').astype('float32')
+    y = np.nan_to_num(y)
+    
+
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random_state=42)
+    
+    
+    #fit model
+    
+    clf = ExtraTreesClassifier(n_estimators=100, random_state=0)
+    clf.fit(X_train, y_train)
+    
+    # Evaluate model
+      
+    
+    score = roc_auc_score(y_test, clf.predict_proba(X_test)[:, 1])
+    
+    def scoring_auc(clf, X, y):
+        score = roc_auc_score(y, clf.predict_proba(X)[:, 1])
+        return score
+    
+    
+    print(f'model for patient {p} has AUC : {score}')
+
+#%% Model for all patients
+
+for p in [2,3]:
+    X_temp = np.load(f'neurovista_X_train_pat{p}.npy').astype('float32')
+    X_temp = np.nan_to_num(X_temp)
+    X = np.vstack((X, X_temp))
+    
+    y_temp = np.load(f'neurovista_y_train_pat{p}.npy').astype('float32')
+    y_temp = np.nan_to_num(y_temp)
+    y = np.vstack((y, y_temp))
+    
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random_state=42)
+
+clf = ExtraTreesClassifier(n_estimators=100, random_state=0)
+clf.fit(X_train, y_train)
+
+score = roc_auc_score(y_test, clf.predict_proba(X_test)[:, 1])
+
+#%%
+
+import pandas as pd
+
+X_df = pd.DataFrame(X_train)
+print(X_df.describe())
+
+#%%
+
+np.count_nonzero(~np.isnan(X))

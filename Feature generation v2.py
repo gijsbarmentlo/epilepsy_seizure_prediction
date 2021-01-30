@@ -58,6 +58,8 @@ Downsampling :
     The frequency of seizure EEGs ranges from 0.5HZ to 13HZ so we can downsample to 26Hz
 """
 
+#%% Imports
+
 
 from tqdm import tqdm
 import sklearn.preprocessing as preprocessing
@@ -73,7 +75,9 @@ import warnings
 warnings.filterwarnings('ignore')
 import logging
 
-#%%  
+
+#%% global variables
+
 
 DATA_PATH = 'C:/Users/gijsb/OneDrive/Documents/epilepsy_neurovista_data/'
 TRAIN_PATHS = [f'Pat{i}Train' for i in [1, 2, 3]]
@@ -87,7 +91,11 @@ BANDS = [0.1,1,4,8,12,30,70]
 HIGHRES_BANDS = [0.1,1,4,8,12,30,70,180]
 
 
+#%% logging
+
+
 today_string = str(datetime.now())[0:19].replace('-', '_').replace(':', '_').replace(' ', '_')
+#☺today_string = datetime.now.strftime("%d_%m_%Y__%H_%M_%S")
 log_filename = f'feature_generation_log_{today_string}.log'
 logging.basicConfig(level=logging.DEBUG, 
                     filename=log_filename, 
@@ -95,7 +103,8 @@ logging.basicConfig(level=logging.DEBUG,
                     datefmt='%Y-%m-%d,%H:%M:%S')
 
 
-#%%
+#%% Reading .mat files
+
 
 def load_mat(mat_file_path):
     try:
@@ -106,8 +115,9 @@ def load_mat(mat_file_path):
     except Exception:
         warnings.warn(f'error reading .mat file {mat_file_path}')
         return np.zeros((16, 240000))
+    
 
-#%%
+#%% Functions used to generate features
 
 
 def zero_crossings(data):
@@ -138,7 +148,6 @@ def highres_total_energy(segment):
     return psd.sum()
 
 #TODO Harmonise techniques
-
 
 def _embed(x, order=3, delay=1):  # credits to raphaelvallat
     """Time-delay embedding.
@@ -179,13 +188,12 @@ def svd_entropy(x, order=3, delay=1, normalize=False):
         svd_e /= np.log2(order)
     return svd_e
 
-#%%
+
+#%% Feature generation function
 
 
 # Loop over files in filelist to generate features
-#TODO make a clean iteratin over each patients file
-    
-    
+#TODO parrallellise as much as mossible
     
 def generate_features(patient_number, data_path, is_training_data, save_to_disk = True):
     
@@ -347,12 +355,12 @@ def generate_features(patient_number, data_path, is_training_data, save_to_disk 
 
             # Highres features : energy per frequency band in 1min segements
             highres_channel_energy = highres_total_energy(data)
-            # TODO add highres_channel_energy as feature
+            features.append(highres_channel_energy)
+            index.append(f'total_channel_energy_{c}')
             
-            f, psd = scipy.signal.welch(
-                data, fs=400, nperseg=SAMPLING_FREQUENCY*4)
+            f, psd = scipy.signal.welch(data, fs=400, nperseg=SAMPLING_FREQUENCY*4)
             psd = np.nan_to_num(psd)
-            #full_psd_sum = psd.sum()/10  # for normalisation purposed
+            full_psd_sum = psd.sum()/10  # for normalisation purposed
             # TODO add band energy divided by full_psd_sum as feature
             
             # j allows us to iterate over 1min segments with 30s overlap
@@ -363,10 +371,14 @@ def generate_features(patient_number, data_path, is_training_data, save_to_disk 
                 psd_segment = np.nan_to_num(psd_segment)
 
                 for k in range(len(HIGHRES_BANDS)-1):
-                    normalised_band_energy = psd_segment[(f_segment > HIGHRES_BANDS[k]) & (
+                    window_band_energy = psd_segment[(f_segment > HIGHRES_BANDS[k]) & (
                         f_segment < HIGHRES_BANDS[k+1])].sum()
-                    features.append(normalised_band_energy)
-                    index.append(f'normalised_band_energy_{c}_{k}_{j}')
+                    features.append(window_band_energy)
+                    index.append(f'windowed_band_energy_{c}_{k}_{j}')
+                    normalised_window_band_energy = window_band_energy/full_psd_sum
+                    features.append(normalised_window_band_energy)
+                    index.append(f'normalised_window_band_energy_{c}_{k}_{j}')
+                    #TODO check if normalised feature is redundant
                     
             logging.debug('highres frequency features generated')
             
@@ -403,13 +415,13 @@ def generate_features(patient_number, data_path, is_training_data, save_to_disk 
         if save_to_disk:
             np.save(join(FEATURE_SAVE_PATH, f'neurovista_X_train_pat{patient_number}.npy'), X)
             np.save(join(FEATURE_SAVE_PATH, f'neurovista_y_train_pat{patient_number}.npy'), y)
-            logging.debug('features and labels saved to disk')
+            logging.info('features and labels saved to disk')
         return (X, y)
     
     if is_training_data == False:
         if save_to_disk:
             np.save(join(FEATURE_SAVE_PATH, f'neurovista_X_test_pat{patient_number}.npy'), X)
-            logging.debug('features saved to disk')
+            logging.info('features saved to disk')
         return X
     
     
@@ -417,7 +429,7 @@ def generate_features(patient_number, data_path, is_training_data, save_to_disk 
 
 data_dict = {}
 
-for p in [2, 3]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
+for p in [1]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
 
     logging.info(f'Entering loop to generate train features for patient {p}')
     patient_path = join(DATA_PATH, TRAIN_PATHS[p-1])
@@ -426,6 +438,3 @@ for p in [2, 3]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
     
     
 #%%
-
-print(data_dict['X_train_pat3'])     
-print(data_dict['y_train_pat3'])
