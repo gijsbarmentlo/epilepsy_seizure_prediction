@@ -176,7 +176,6 @@ def _embed(x, order=3, delay=1):  # credits to raphaelvallat
         Y[i] = x[i * delay:i * delay + Y.shape[1]]
     return Y.T
 
-
 def svd_entropy(x, order=3, delay=1, normalize=False):
     x = np.array(x)
     mat = _embed(x, order=order, delay=delay)
@@ -429,7 +428,7 @@ def generate_features(patient_number, data_path, is_training_data, save_to_disk 
 
 data_dict = {}
 
-for p in [1]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
+for p in [1, 2, 3]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
 
     logging.info(f'Entering loop to generate train features for patient {p}')
     patient_path = join(DATA_PATH, TRAIN_PATHS[p-1])
