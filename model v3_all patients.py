@@ -130,10 +130,10 @@ ax.set_title("Total Impurity vs effective alpha for training set")
 from sklearn.metrics import make_scorer
 from evolutionary_search import EvolutionaryAlgorithmSearchCV
 from sklearn.model_selection import StratifiedKFold
-from multiprocessing import Pool
+# from multiprocessing import Pool
 
 # Create model 
-extra_trees_clf = ExtraTreesClassifier(n_jobs = -1, bootstrap = False, max_samples = 0.2)
+extra_trees_clf = ExtraTreesClassifier()
 
 # Optimise hyperparameters
 
@@ -141,22 +141,22 @@ scorer_object = make_scorer(roc_auc_score, greater_is_better = True, needs_proba
 
 distributions = dict(criterion = ['gini', 'entropy'],
                      n_estimators = range(10, 1000), 
-                     max_depth = [1, 10, 100, 'None'],
+                     max_depth = [1, 10, 100, 1000, None],
                      min_samples_split = range(2, 50),
                      min_samples_leaf = range(1, 200),
-                     max_features = ['Auto', 'sqrt', 'log2'],
-                     max_leaf_nodes = [10, 100, 1000, 'None'],
+                     max_features = ['auto', 'sqrt', 'log2'],
+                     max_leaf_nodes = [10, 100, 1000, None],
                      min_impurity_decrease = [0, 0.01, 0.25, 1, 10],
                      bootstrap = [False, True],
-                     class_weight = ['balanced', 'balanced_subsample', 'None'],
+                     class_weight = ['balanced', 'balanced_subsample', None],
                      ccp_alpha = np.linspace(0, 0.013, 13) ,
-                     max_samples = np.linspace(0, 1, 20))
+                     max_samples = np.linspace(0.001, 0.999, 20).astype('float'))
 
-pool = Pool(4)
+# pool = Pool(4)
 
 clf = EvolutionaryAlgorithmSearchCV(extra_trees_clf, 
                                     distributions, 
-                                    population_size=50,
+                                    population_size = 50,
                                     gene_mutation_prob = 0.10,
                                     gene_crossover_prob = 0.5,
                                     tournament_size = 3,
@@ -164,24 +164,24 @@ clf = EvolutionaryAlgorithmSearchCV(extra_trees_clf,
                                     cv = StratifiedKFold(n_splits = 3),
                                     verbose = 1,
                                     scoring = scorer_object,
-                                    pmap = pool.map)
-                                    #n_jobs = 1
+                                    n_jobs = 1)
+                                    #pmap = pool.map
 
 search = clf.fit(X_train, y_train)
 print(f'best parameters found in search are {search.best_params_}')
 
-#%%
+#%% save and evaluate
 
-best_clf = ExtraTreesClassifier(n_estimators = 837, max_depth = 38, min_samples_leaf = 1, min_impurity_decrease = 0, criterion = 'entropy', bootstrap = False, min_samples_split = 2, class_weight = 'balanced')
+#best_clf = ExtraTreesClassifier(n_estimators = 837, max_depth = 38, min_samples_leaf = 1, min_impurity_decrease = 0, criterion = 'entropy', bootstrap = False, min_samples_split = 2, class_weight = 'balanced')
 
-#best_clf = ExtraTreesClassifier(**clf.best_params_)
+best_clf = ExtraTreesClassifier(**clf.best_params_)
 best_clf = best_clf.fit(X_train, y_train)
 metrics_dict = compute_metrics(best_clf, X_test, y_test)
-print(f'model trained on patients 2 has following performance metrics after hyperparam tuning: {metrics_dict}')
+print(f'model trained on all patients has following performance metrics after hyperparam tuning: {metrics_dict}')
 
-#import pickle
-#filename = 'neurovista_model_pat3_31jan_hyperparam_genetic.sav'
-#pickle.dump(best_clf, open(filename, 'wb'))
+import pickle
+filename = 'neurovista_model_allpat_2feb_hyperparam_genetic_long.sav'
+pickle.dump(best_clf, open(filename, 'wb'))
 
 #%% evaluate
 import pickle
