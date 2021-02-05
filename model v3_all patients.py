@@ -9,6 +9,7 @@ Created on Fri Jan 29 18:14:44 2021
 
 
 import logging
+import pickle
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,9 +19,12 @@ from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.metrics import roc_auc_score, f1_score, roc_curve
 import sklearn.metrics
 
+import warnings
+warnings.filterwarnings("ignore")
 
 #%% Helper functions
 
+# TODO add kfold and remove threshold commpute
 
 def compute_metrics(clf, X_test, y_test):
     """
@@ -66,6 +70,42 @@ def compute_metrics_threshold(clf, X_test, y_test, threshold):
     
     return metrics_dict
 
+def auc_patient_cv(clf, X_pat, y_pat):
+    
+    auc_dict = {}
+    
+    # A - train = 1 & 2 ; test = 3
+    X_train = np.vstack((X_pat['pat1'], X_pat['pat2']))
+    y_train = np.vstack((y_pat['pat1'], y_pat['pat2']))
+    X_test = X_pat['pat3']
+    y_test = y_pat['pat3']
+    
+    clf.fit(X_train, y_train)
+    y_pred_proba = clf.predict_proba(X_test)[:, [1]]
+    auc_dict['train 1_2'] = roc_auc_score(y_test, y_pred_proba)
+    
+    # B - train = 1 & 3 ; test = 2
+    X_train = np.vstack((X_pat['pat1'], X_pat['pat3']))
+    y_train = np.vstack((y_pat['pat1'], y_pat['pat3']))
+    X_test = X_pat['pat2']
+    y_test = y_pat['pat2']
+    
+    clf.fit(X_train, y_train)
+    y_pred_proba = clf.predict_proba(X_test)[:, [1]]
+    auc_dict['train 1_3'] = roc_auc_score(y_test, y_pred_proba)    
+
+    # C - train = 2 & 3 ; test = 1
+    X_train = np.vstack((X_pat['pat2'], X_pat['pat3']))
+    y_train = np.vstack((y_pat['pat2'], y_pat['pat3']))
+    X_test = X_pat['pat1']
+    y_test = y_pat['pat1']
+    
+    clf.fit(X_train, y_train)
+    y_pred_proba = clf.predict_proba(X_test)[:, [1]]
+    auc_dict['train 2_3'] = roc_auc_score(y_test, y_pred_proba)     
+    
+    return auc_dict
+
 #%% Create train and test datasets
 
 # Load data from file
@@ -84,20 +124,91 @@ logging.debug('X and y loaded into dictionary')
 
 # Assign data to train and test sets
 
+## Random split
+
 X = np.vstack(tuple(X_pat.values()))
 y = np.vstack(tuple(y_pat.values()))
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random_state=42)
+X_train_rand, X_test_rand, y_train_rand, y_test_rand = train_test_split(X, y, test_size=0.33, random_state=42)
 
+## Per patient split to guarantee all subsets have equal proportions of data from each patient
+
+X_train_dict = {}
+X_test_dict = {}
+y_train_dict = {}
+y_test_dict = {}
+
+for p in [1, 2, 3]:
+    X_train_dict[f'pat{p}'], X_test_dict[f'pat{p}'], y_train_dict[f'pat{p}'], y_test_dict[f'pat{p}'] = train_test_split(X_pat[f'pat{p}'], y_pat[f'pat{p}'], test_size=0.33, random_state=42)
+
+X_train_pat = np.vstack(tuple(X_train_dict.values()))
+X_test_pat = np.vstack(tuple(X_test_dict.values()))
+y_train_pat = np.vstack(tuple(y_train_dict.values()))
+y_test_pat = np.vstack(tuple(y_test_dict.values()))
 
 #%% Model for all patients with cross patient test/train split - first fit
 
 # Create basic classifiers
 
-def evaluate_classifiers(classifiers, X_train, y_train, X_test, y_test):
+from sklearn.neural_network import MLPClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.gaussian_process.kernels import RBF
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+from sklearn.linear_model import RidgeClassifier
+from sklearn.experimental import enable_hist_gradient_boosting
+from sklearn.ensemble import HistGradientBoostingClassifier
+import lightgbm
+
+
+
+classifiers = {'ExtraTrees' : ExtraTreesClassifier(n_jobs = -1), 
+               'Kneighbours' : KNeighborsClassifier(3, n_jobs = -1),
+#               'Gaussian process' : GaussianProcessClassifier(1.0 * RBF(1.0), n_jobs = -1),
+               'Decision tree' : DecisionTreeClassifier(),
+               'Random forest' : RandomForestClassifier(n_estimators=500, n_jobs = -1),
+               'Neural network' : MLPClassifier(alpha=1, max_iter=1000),
+               'Adaboost' : AdaBoostClassifier(),
+               'Gaussain NB' : GaussianNB(),
+               'Quadratic discriminant' : QuadraticDiscriminantAnalysis(),
+               'Hist Gradient Boosting Classifier (LGBM-like)' : HistGradientBoostingClassifier(),
+               'LGBM' : lightgbm.LGBMClassifier(n_estimators = 500, objective = 'binary')}
+
+performance_dict = {}
+
+for clf_name, clf in classifiers.items():
+    # random split
+    clf.fit(X_train_rand, y_train_rand)
+    metrics = compute_metrics(clf, X_test_rand, y_test_rand)
+    print(f'{clf_name}')
+    print(f"random split : {metrics}")
+    performance_dict[f'{clf_name}_rand'] = metrics
     
+    # carefull per patient split
+    clf.fit(X_train_pat, y_train_pat)
+    metrics = compute_metrics(clf, X_test_pat, y_test_pat)
+    print(f"patient split : {metrics} \n")
+    performance_dict[f'{clf_name}_pat'] = metrics
     
-    return 
+for clf_name, clf in classifiers.items():
+    # Train on 2 patients test on the other
+    auc_dict = auc_patient_cv(clf, X_pat, y_pat)
+    print(f'train on 2 out of 3 : {auc_dict}')
+    
+#%% Evaluate best extra trees
+
+
+tuned_extra_trees = pickle.load( open( "neurovista_model_allpat_2feb_hyperparam_genetic_long_v2.sav", "rb" ) )
+auc_dict = auc_patient_cv(tuned_extra_trees, X_pat, y_pat)
+print(f'train on 2 out of 3 : {auc_dict}')
+
+
+#%% old basic clf
+    
 
 basic_clf = ExtraTreesClassifier()
 basic_clf.fit(X_train, y_train)

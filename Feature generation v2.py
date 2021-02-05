@@ -188,6 +188,9 @@ def svd_entropy(x, order=3, delay=1, normalize=False):
     return svd_e
 
 
+# TODO add shannon entropy
+
+
 #%% Feature generation function
 
 
