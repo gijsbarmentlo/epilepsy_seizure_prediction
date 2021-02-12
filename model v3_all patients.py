@@ -139,7 +139,7 @@ y_train_dict = {}
 y_test_dict = {}
 
 for p in [1, 2, 3]:
-    X_train_dict[f'pat{p}'], X_test_dict[f'pat{p}'], y_train_dict[f'pat{p}'], y_test_dict[f'pat{p}'] = train_test_split(X_pat[f'pat{p}'], y_pat[f'pat{p}'], test_size=0.33, random_state=42)
+    X_train_dict[f'pat{p}'], X_test_dict[f'pat{p}'], y_train_dict[f'pat{p}'], y_test_dict[f'pat{p}'] = train_test_split(X_pat[f'pat{p}'], y_pat[f'pat{p}'], test_size=0.4, random_state=42)
 
 X_train_pat = np.vstack(tuple(X_train_dict.values()))
 X_test_pat = np.vstack(tuple(X_test_dict.values()))
@@ -201,11 +201,17 @@ for clf_name, clf in classifiers.items():
     
 #%% Evaluate best extra trees
 
+#tuned_extra_trees = pickle.load( open( "neurovista_model_allpat_2feb_hyperparam_genetic_long_v2.sav", "rb" ) )
+tuned_extra_trees.fit(X_train_pat, y_train_pat)
+metrics_dict = compute_metrics(tuned_extra_trees, X_test_pat, y_test_pat)
+print(f'extratrees trained on 2/3rd of each patient : {metrics_dict}')
 
-tuned_extra_trees = pickle.load( open( "neurovista_model_allpat_2feb_hyperparam_genetic_long_v2.sav", "rb" ) )
-auc_dict = auc_patient_cv(tuned_extra_trees, X_pat, y_pat)
-print(f'train on 2 out of 3 : {auc_dict}')
-
+#%%
+import lightgbm
+lgbm_clf = lightgbm.LGBMClassifier(n_estimators = 50, objective = 'binary')
+lgbm_clf.fit(X_train_pat, y_train_pat)
+metrics_dict = compute_metrics(lgbm_clf, X_test_pat, y_test_pat)
+print(f'extratrees train on 2/3rd of each patient : {metrics_dict}')
 
 #%% old basic clf
     
