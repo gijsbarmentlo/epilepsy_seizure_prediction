@@ -199,35 +199,70 @@ for clf_name, clf in classifiers.items():
     auc_dict = auc_patient_cv(clf, X_pat, y_pat)
     print(f'train on 2 out of 3 : {auc_dict}')
     
-#%% Evaluate best extra trees
 
-#tuned_extra_trees = pickle.load( open( "neurovista_model_allpat_2feb_hyperparam_genetic_long_v2.sav", "rb" ) )
-tuned_extra_trees.fit(X_train_pat, y_train_pat)
-metrics_dict = compute_metrics(tuned_extra_trees, X_test_pat, y_test_pat)
-print(f'extratrees trained on 2/3rd of each patient : {metrics_dict}')
+#%% Simple LGBM
 
-#%%
+# create and fit LGMB
 import lightgbm
-lgbm_clf = lightgbm.LGBMClassifier(n_estimators = 50, objective = 'binary')
-lgbm_clf.fit(X_train_pat, y_train_pat)
+lgbm_clf = lightgbm.LGBMClassifier(n_estimators = 500, objective = 'binary', class_weight = 'balanced')
+lgbm_clf.fit(X_train_pat, y_train_pat, eval_metric = 'auc', verbose = 2)
+
+
+# Compute metrics and plot ROC
 metrics_dict = compute_metrics(lgbm_clf, X_test_pat, y_test_pat)
 print(f'extratrees train on 2/3rd of each patient : {metrics_dict}')
 
+y_pred_proba = lgbm_clf.predict_proba(X_test_pat)[:, [1]]
+fpr, tpr, thresholds = roc_curve(y_test_pat, y_pred_proba, pos_label=1)
+
+plt.subplots(1, figsize=(10,10))
+plt.title('Receiver Operating Characteristic - Extra Trees Classifier')
+plt.plot(fpr, tpr)
+plt.plot([0, 1], ls="--")
+plt.plot([0, 0], [1, 0] , c=".7"), plt.plot([1, 1] , c=".7")
+plt.ylabel('True Positive Rate')
+plt.xlabel('False Positive Rate')
+plt.show()
+
+#%% LGBM avoiding overfitting
+
+lgbm_clf = lightgbm.LGBMClassifier(n_estimators = 500, objective = 'binary', 
+                                   num_leaves = 100, min_data_in_leaf = 30, bagging_fraction = 0.8, 
+                                   bagging_freq = 5, feature_fraction = 0.6, max_depth = 500,  
+                                    lambda_l1 = 0.1) #is_unbalance = True,
+
+lgbm_clf.fit(X_train_pat, y_train_pat, early_stopping_rounds=5, eval_set = [(X_test_pat, y_test_pat)], 
+             eval_metric = 'auc', verbose = 2)
+
+# Compute metrics and plot ROC
+metrics_dict = compute_metrics(lgbm_clf, X_test_pat, y_test_pat)
+print(f'extratrees train on 2/3rd of each patient : {metrics_dict}')
+
+y_pred_proba = lgbm_clf.predict_proba(X_test_pat)[:, [1]]
+fpr, tpr, thresholds = roc_curve(y_test_pat, y_pred_proba, pos_label=1)
+
+plt.subplots(1, figsize=(10,10))
+plt.title('Receiver Operating Characteristic - Extra Trees Classifier')
+plt.plot(fpr, tpr)
+plt.plot([0, 1], ls="--")
+plt.plot([0, 0], [1, 0] , c=".7"), plt.plot([1, 1] , c=".7")
+plt.ylabel('True Positive Rate')
+plt.xlabel('False Positive Rate')
+plt.show()
+
 #%% old basic clf
     
-
 basic_clf = ExtraTreesClassifier()
-basic_clf.fit(X_train, y_train)
+basic_clf.fit(X_train_pat, y_train_pat)
 
 
 # Evaluate performance before tuning
-metrics_dict = compute_metrics(basic_clf, X_test, y_test)
+metrics_dict = compute_metrics(basic_clf, X_test_pat, y_test_pat)
 
-y_pred_proba = basic_clf.predict_proba(X_test)[:, [1]]
+y_pred_proba = basic_clf.predict_proba(X_test_pat)[:, [1]]
 fpr, tpr, thresholds = roc_curve(y_test, y_pred_proba, pos_label=1)
 
 print (f'without hyperparameter tuning, the ExtraTreesClassifier performs as follows : {metrics_dict}')
-
 
 
 #%% find appropriate alpha range for pruning
@@ -305,6 +340,13 @@ search = clf.fit(X_train, y_train) # TODO test removing search
 #%%
 
 print(f'best parameters found in search are {clf.best_params_}')
+#%% Evaluate best extra trees
+
+#tuned_extra_trees = pickle.load( open( "neurovista_model_allpat_2feb_hyperparam_genetic_long_v2.sav", "rb" ) )
+tuned_extra_trees.fit(X_train_pat, y_train_pat)
+metrics_dict = compute_metrics(tuned_extra_trees, X_test_pat, y_test_pat)
+print(f'extratrees trained on 2/3rd of each patient : {metrics_dict}')
+
 
 #%% save and evaluate
 

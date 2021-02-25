@@ -61,7 +61,7 @@ def generate_features(patient_number, data_path, is_training_data, save_to_disk 
     logging.debug(f'generated filelist of length {len(filelist)} for patient {patient_number}; is_training_data = {is_training_data}')
     
     counter = 0
-    for filename in tqdm(filenames[0:10]):
+    for filename in tqdm(filenames):
         
         # Lists that will contain feature names and values, we will stack these to make X_train
         index = []
@@ -283,14 +283,24 @@ def generate_features(patient_number, data_path, is_training_data, save_to_disk 
     
 #%% Call feature generation on every patient for training data
 
-#data_dict = {}
+data_dict = {}
 
-#for p in [1, 2, 3]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
+for p in [1, 2, 3]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
 
- #   logging.info(f'Entering loop to generate train features for patient {p}')
- #   patient_path = join(DATA_PATH, TRAIN_PATHS[p-1])
+    logging.info(f'Entering loop to generate train features for patient {p}')
+    patient_path = join(DATA_PATH, TRAIN_PATHS[p-1])
     
- #   data_dict[f'X_train_{p}'], data_dict[f'y_train_{p}'], index = generate_features(patient_number = p , data_path = patient_path, is_training_data = True, save_to_disk = True)
+    data_dict[f'X_train_{p}'], data_dict[f'y_train_{p}'], index = generate_features(patient_number = p , data_path = patient_path, is_training_data = True, save_to_disk = True)
+
+#%% call on test data
+
+for p in [1, 2, 3]:  #[1, 2, 3]:  # iterating over patients 1, 2, 3
+
+    logging.info(f'Entering loop to generate test set features for patient {p}')
+    patient_path = join(DATA_PATH, TEST_PATHS[p-1])
+    
+    data_dict[f'X_test_{p}'], index = generate_features(patient_number = p , data_path = patient_path, is_training_data = False, save_to_disk = True)
+  
     
 #%% fast feature generation for iterating and testing
 
